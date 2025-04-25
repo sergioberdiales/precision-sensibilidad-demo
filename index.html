@@ -1,0 +1,134 @@
+<!-- Demostrador interactivo de Precisión y Sensibilidad (v8) -->
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demostrador de Precisión y Sensibilidad</title>
+    <style>
+      :root { --blue:#003c82; --green:#28a745; --red:#d9534f; }
+      body{font-family:Arial,Helvetica,sans-serif;margin:16px;background:#f5f7fa;color:#222;}
+      h2{text-align:center;margin-bottom:6px;}
+      .intro{text-align:center;max-width:680px;margin:0 auto 14px;font-size:0.95rem;}
+      /* CONTROLES */
+      .controls{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:center;margin-bottom:1.2rem;}
+      .controls label{font-weight:bold;}
+      .controls input[type="range"]{width:200px;}
+      button{border:none;padding:0.6rem 1.1rem;border-radius:6px;cursor:pointer;font-weight:600;transition:opacity 0.2s;}
+      button:hover{opacity:0.9;}
+      #applyCutoff{background:#0275d8;color:#fff;}
+      #randomizeProb{background:#5cb85c;color:#fff;}
+      /* TABLA */
+      .table-wrapper{overflow-x:auto;}
+      table{width:100%;max-width:720px;margin:0 auto 1.4rem;border-collapse:collapse;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,0.1);}
+      thead{background:var(--blue);color:#fff;}
+      th,td{padding:0.45rem;text-align:center;border:1px solid #e7e7e7;}
+      tbody tr:nth-child(even){background:#f0f4ff;}
+      tbody tr:hover{background:#e9f5ff;}
+      input[type="number"],select{width:70px;text-align:center;padding:2px 4px;}
+      .true-res{color:var(--green);font-weight:700;}
+      .false-res{color:var(--red);font-weight:700;}
+      /* MÉTRICAS */
+      .metrics-box{display:flex;flex-wrap:wrap;gap:1.5rem;justify-content:center;margin-bottom:1.6rem;}
+      .metric-group{display:flex;flex-direction:column;gap:0.4rem;}
+      .metric,.formula{background:#fff;padding:1rem 1.2rem;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);min-width:240px;}
+      .metric h4{margin:0 0 0.4rem;font-size:1rem;color:#333;}
+      .metric p{margin:0.3rem 0;font-family:"Courier New",monospace;font-size:0.95rem;}
+      .formula code{background:#eef5ff;padding:0.1rem 0.25rem;border-radius:4px;}
+      /* DEFINICIONES */
+      #definitions{max-width:820px;margin:0 auto;background:#fff;padding:1.4rem 1.6rem;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,0.1);line-height:1.45em;}
+      #definitions h3{margin-top:0.8rem;color:var(--blue);}
+      #definitions code{background:#eef5ff;padding:0.1rem 0.3rem;border-radius:4px;}
+      /* MOBILE */
+      @media(max-width:600px){th,td{padding:0.35rem 0.25rem;font-size:0.78rem;}input[type="number"],select{width:58px;}}
+    </style>
+  </head>
+  <body>
+    <h2>Demostrador de Precisión y Sensibilidad</h2>
+    <p class="intro">Aplicación interactiva para experimentar cómo cambian la <strong>precisión</strong> y la <strong>sensibilidad</strong> (recall) de un <em>modelo de predicción de cobro de facturas</em> al modificar probabilidades, predicciones y el punto de corte.</p>
+
+    <!-- CONTROLES -->
+    <div class="controls">
+      <label for="cutoff">Punto de corte: <span id="cutoffVal">0.50</span></label>
+      <input type="range" id="cutoff" min="0" max="1" step="0.01" value="0.5" />
+      <button id="applyCutoff">Aplicar corte</button>
+      <button id="randomizeProb">Probabilidades aleatorias</button>
+    </div>
+
+    <!-- TABLA -->
+    <div class="table-wrapper">
+      <table id="dataTable">
+        <thead>
+          <tr><th>ID</th><th>PROB. COBRO</th><th>PREDICCIÓN</th><th>REALIDAD</th><th>RESULTADO</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- MÉTRICAS -->
+    <div class="metrics-box" id="metricsBox"></div>
+
+    <!-- DEFINICIONES -->
+    <div id="definitions"></div>
+
+    <script>
+      // Datos iniciales (prob, pred) y realidad
+      const initData=[[0.12,0],[0.24,0],[0.32,0],[0.45,0],[0.42,0],[0.12,0],[0.87,1],[0.14,0],[0.15,0],[0.67,0]];
+      const realArr=[0,0,0,1,0,0,1,0,1,0];
+      const tbody=document.querySelector('#dataTable tbody');
+      initData.forEach((d,i)=>{
+        const tr=document.createElement('tr');
+        // ID
+        const idCell=document.createElement('td');idCell.className='id-cell';idCell.textContent=`Factura ${i+1}`;tr.appendChild(idCell);
+        // Prob
+        const probTd=document.createElement('td');
+        const probIn=document.createElement('input');probIn.type='number';probIn.min=0;probIn.max=1;probIn.step='0.01';probIn.inputMode='decimal';probIn.value=d[0].toFixed(2);
+        probIn.addEventListener('change',e=>{validateProb(e.target);});probIn.addEventListener('blur',recalcularTodo);
+        probTd.appendChild(probIn);tr.appendChild(probTd);
+        // Pred select
+        const predTd=document.createElement('td');const predSel=document.createElement('select');['0','1'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;predSel.appendChild(o);});predSel.value=d[1];predSel.addEventListener('change',recalcularTodo);predTd.appendChild(predSel);tr.appendChild(predTd);
+        // Real select
+        const realTd=document.createElement('td');const realSel=document.createElement('select');['0','1'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;realSel.appendChild(o);});realSel.value=realArr[i];realSel.addEventListener('change',recalcularTodo);realTd.appendChild(realSel);tr.appendChild(realTd);
+        // Resultado
+        tr.appendChild(document.createElement('td'));
+        tbody.appendChild(tr);
+      });
+
+      // Responsive IDs
+      function shortenIDs(){const short=window.innerWidth<600;tbody.querySelectorAll('.id-cell').forEach((c,i)=>{c.textContent=short?`F${i+1}`:`Factura ${i+1}`;});}
+      window.addEventListener('resize',shortenIDs);
+
+      // Validation
+      function validateProb(inp){let v=parseFloat(inp.value);if(isNaN(v))v=0;if(v<0)v=0;if(v>1)v=1;inp.value=v.toFixed(2);}
+
+      // Controls
+      const cutoffRange=document.getElementById('cutoff');
+      const cutoffValSpan=document.getElementById('cutoffVal');
+      document.getElementById('applyCutoff').addEventListener('click',()=>{applyCurrentCut();recalcularTodo();});
+      function applyCurrentCut(){const cut=parseFloat(cutoffRange.value);tbody.querySelectorAll('tr').forEach(tr=>{const p=parseFloat(tr.children[1].querySelector('input').value);tr.children[2].querySelector('select').value=p>=cut?1:0;});}
+      document.getElementById('randomizeProb').addEventListener('click',()=>{
+        const cut=parseFloat(cutoffRange.value);
+        tbody.querySelectorAll('tr').forEach(tr=>{
+          const rnd=Math.random();tr.children[1].querySelector('input').value=rnd.toFixed(2);
+          // actualizar pred según corte
+          tr.children[2].querySelector('select').value=rnd>=cut?1:0;
+        });
+        recalcularTodo();
+      });
+      cutoffRange.addEventListener('input',()=>{cutoffValSpan.textContent=Number(cutoffRange.value).toFixed(2);});
+
+      // Core
+      const metricsBox=document.getElementById('metricsBox');
+      const defDiv=document.getElementById('definitions');
+      const tpl=(t,prec,rec,a,b,c)=>`<div class="metric-group"><div class="metric"><h4>${t}</h4><p>Precisión: ${(prec*100).toFixed(1)}%</p><p>Sensibilidad: ${(rec*100).toFixed(1)}%</p></div><div class="formula"><p><code>Precisión = ${a} / (${a}+${b}) = ${prec.toFixed(2)}</code></p><p><code>Sensibilidad = ${a} / (${a}+${c}) = ${rec.toFixed(2)}</code></p></div></div>`;
+      function leerDatos(){const res=[];tbody.querySelectorAll('tr').forEach(tr=>{res.push({tr,prob:parseFloat(tr.children[1].querySelector('input').value),pred:parseInt(tr.children[2].querySelector('select').value),real:parseInt(tr.children[3].querySelector('select').value)});});return res;}
+      function pintarResultados(d){d.forEach(({tr,pred,real})=>{const cell=tr.children[4];let tag='',ok=false;if(pred&&real){tag='VP';ok=true;}else if(pred&&!real){tag='FP';}else if(!pred&&!real){tag='VN';ok=true;}else{tag='FN';}cell.textContent=tag;cell.className=ok?'true-res':'false-res';});}
+      function cm(d){let TP=0,FP=0,TN=0,FN=0;d.forEach(x=>{if(x.pred&&x.real)TP++;else if(x.pred&&!x.real)FP++;else if(!x.pred&&!x.real)TN++;else FN++;});return{TP,FP,TN,FN};}
+      function met(cm){return{precPos:cm.TP+cm.FP?cm.TP/(cm.TP+cm.FP):0,recPos:cm.TP+cm.FN?cm.TP/(cm.TP+cm.FN):0,precNeg:cm.TN+cm.FN?cm.TN/(cm.TN+cm.FN):0,recNeg:cm.TN+cm.FP?cm.TN/(cm.TN+cm.FP):0,...cm};}
+      function pintarMetricas(m){metricsBox.innerHTML=tpl('La factura se cobrará',m.precPos,m.recPos,m.TP,m.FP,m.FN)+tpl('La factura NO se cobrará',m.precNeg,m.recNeg,m.TN,m.FN,m.FP);}
+      function defs(cut){defDiv.innerHTML=`<h3>Significado de VP, FP, VN y FN</h3><ul><li><strong>VP</strong>: predijimos "se cobrará" y se cobró.</li><li><strong>FP</strong>: predijimos "se cobrará" y no se cobró.</li><li><strong>VN</strong>: predijimos "no se cobrará" y no se cobró.</li><li><strong>FN</strong>: predijimos "no se cobrará" y sí se cobró.</li></ul><h3>Definiciones de los indicadores</h3><p><strong>Precisión</strong> (<code>VP / (VP + FP)</code>): proporción de facturas marcadas como cobradas que efectivamente se cobraron.</p><p><strong>Sensibilidad</strong> (<code>VP / (VP + FN)</code>): proporción de facturas cobradas detectadas por el modelo.</p><h3>Punto de corte</h3><p>Umbral actual: <code>${cut.toFixed(2)}</code>. Subirlo suele aumentar la precisión y reducir la sensibilidad; bajarlo, al revés.</p>`;}
+      function recalcularTodo(){shortenIDs();const datos=leerDatos();pintarResultados(datos);const cmRes=cm(datos);pintarMetricas(met(cmRes));defs(parseFloat(cutoffRange.value));}
+      document.addEventListener('DOMContentLoaded',()=>{shortenIDs();applyCurrentCut();recalcularTodo();cutoffValSpan.textContent=cutoffRange.value;});
+    </script>
+  </body>
+</html>
